@@ -27,7 +27,8 @@ use crate::parser::{parse_ascii_to_binary, parse_binary_to_ascii};
 // #..####..#
 // #........#
 // ##########
-const MAP: &str = "#..#######
+const MAP: &str = "
+#..#######
 #..#..#..#
 #..#..#..#
 #..#.....#
@@ -139,30 +140,22 @@ fn main() -> io::Result<()> {
                     let token = Token(unique_token.0);
                     unique_token.0 += 1;
 
-                    poll.registry().register(
-                        &mut connection,
-                        token,
-                        Interest::WRITABLE | Interest::READABLE,
-                    )?;
+                    poll.registry()
+                        .register(&mut connection, token, Interest::READABLE)?;
 
                     connections.insert(token, connection);
                 },
                 token => {
-                    let done = if let Some(connection) = connections.get_mut(&token) {
-                        response_client(&mut c, &grid, poll.registry(), connection, event)?
-                    } else {
-                        false
-                    };
-                    if done {
-                        if let Some(mut connection) = connections.remove(&token) {
-                            poll.registry().deregister(&mut connection)?;
-                        }
+                    if let Some(connection) = connections.get_mut(&token) {
+                        let _ = response_client(&mut c, &grid, poll.registry(), connection, event)?;
                     }
                 }
             }
         }
     }
 }
+
+static mut IT: usize = 0;
 
 fn response_client(
     c: &mut Car,
@@ -172,7 +165,8 @@ fn response_client(
     event: &Event,
 ) -> io::Result<bool> {
     if event.is_writable() {
-        println!("writable: {}", c);
+        unsafe { IT += 1 };
+        unsafe { println!("[Iteration {}]   {}", IT, c) };
         match connection.write(c.to_string().as_bytes()) {
             Ok(n) if n < c.to_string().as_bytes().len() => {
                 return Err(io::ErrorKind::WriteZero.into())
@@ -188,17 +182,16 @@ fn response_client(
     }
 
     if event.is_readable() {
-        let mut connection_closed = false;
         let mut received_data = vec![0; 13];
-        let bytes_read = 0;
-        println!("readable: ");
+        let mut bytes_read = 0;
         loop {
             match connection.read(&mut received_data[bytes_read..]) {
                 Ok(0) => {
-                    connection_closed = true;
                     break;
                 }
-                Ok(_) => {}
+                Ok(n) => {
+                    bytes_read += n;
+                }
                 Err(err) if err.kind() == io::ErrorKind::WouldBlock => break,
                 Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
                 Err(err) => return Err(err),
@@ -208,18 +201,21 @@ fn response_client(
         if bytes_read != 0 {
             let received_data = &received_data[..bytes_read];
             let temp_c = from_utf8(received_data).unwrap().parse::<Car>().unwrap();
+            c.target.0 = temp_c.target.0;
+            c.target.1 = temp_c.target.1;
             let coor_start = Coord::new(temp_c.pos.0, temp_c.pos.1);
             let coor_end = Coord::new(temp_c.target.0, temp_c.target.1);
-            if let Some(path) = find_path(&grid, coor_start, coor_end, Default::default()) {
-                c.pos.0 = path[1].x;
-                c.pos.1 = path[1].y;
+            if let Some(steps) = find_path(&grid, coor_start, coor_end, Default::default()) {
+                if steps.len() > 1 {
+                    c.pos.0 = steps[1].x;
+                    c.pos.1 = steps[1].y;
+                } else if steps.len() == 1 {
+                    c.pos.0 = steps[0].x;
+                    c.pos.1 = steps[0].y;
+                }
             }
         }
         registry.reregister(connection, event.token(), Interest::WRITABLE)?;
-        if connection_closed {
-            println!("Connection closed");
-            return Ok(true);
-        }
     }
 
     Ok(false)
