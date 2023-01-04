@@ -27,8 +27,7 @@ use crate::parser::{parse_ascii_to_binary, parse_binary_to_ascii};
 // #..####..#
 // #........#
 // ##########
-const MAP: &str = "
-#..#######
+const MAP: &str = "#..#######
 #..#..#..#
 #..#..#..#
 #..#.....#
