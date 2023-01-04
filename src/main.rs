@@ -95,7 +95,10 @@ fn main() -> io::Result<()> {
         target: (0, 0),
     };
 
-    println!("{}", parse_binary_to_ascii(parse_ascii_to_binary(MAP.to_string())));
+    println!(
+        "{}",
+        parse_binary_to_ascii(parse_ascii_to_binary(MAP.to_string()))
+    );
 
     let grid = Grid {
         tiles: parse_ascii_to_binary(MAP.to_string()),
@@ -136,14 +139,17 @@ fn main() -> io::Result<()> {
                     let token = Token(unique_token.0);
                     unique_token.0 += 1;
 
-                    poll.registry()
-                        .register(&mut connection, token, Interest::WRITABLE)?;
+                    poll.registry().register(
+                        &mut connection,
+                        token,
+                        Interest::WRITABLE | Interest::READABLE,
+                    )?;
 
                     connections.insert(token, connection);
                 },
                 token => {
                     let done = if let Some(connection) = connections.get_mut(&token) {
-                        handle_connection_event(&mut c, &grid, poll.registry(), connection, event)?
+                        response_client(&mut c, &grid, poll.registry(), connection, event)?
                     } else {
                         false
                     };
@@ -158,7 +164,7 @@ fn main() -> io::Result<()> {
     }
 }
 
-fn handle_connection_event(
+fn response_client(
     c: &mut Car,
     grid: &Grid,
     registry: &Registry,
@@ -171,15 +177,14 @@ fn handle_connection_event(
             Ok(n) if n < c.to_string().as_bytes().len() => {
                 return Err(io::ErrorKind::WriteZero.into())
             }
-            Ok(_) => {
-                registry.reregister(connection, event.token(), Interest::WRITABLE)?
-            }
-            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {}
-            Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
-                return handle_connection_event(c, &grid, registry, connection, event)
+            Ok(_) => registry.reregister(connection, event.token(), Interest::WRITABLE)?,
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => {}
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => {
+                return response_client(c, &grid, registry, connection, event)
             }
             Err(err) => return Err(err),
         }
+        registry.reregister(connection, event.token(), Interest::READABLE)?;
     }
 
     if event.is_readable() {
@@ -194,8 +199,8 @@ fn handle_connection_event(
                     break;
                 }
                 Ok(_) => {}
-                Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => break,
-                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => break,
+                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
                 Err(err) => return Err(err),
             }
         }
@@ -210,7 +215,7 @@ fn handle_connection_event(
                 c.pos.1 = path[1].y;
             }
         }
-        registry.reregister(connection, event.token(), Interest::READABLE)?;
+        registry.reregister(connection, event.token(), Interest::WRITABLE)?;
         if connection_closed {
             println!("Connection closed");
             return Ok(true);
