@@ -145,8 +145,15 @@ fn main() -> io::Result<()> {
                     connections.insert(token, connection);
                 },
                 token => {
-                    if let Some(connection) = connections.get_mut(&token) {
-                        let _ = response_client(&mut c, &grid, poll.registry(), connection, event)?;
+                    let done = if let Some(connection) = connections.get_mut(&token) {
+                        response_client(&mut c, &grid, poll.registry(), connection, event)?
+                    } else {
+                        false
+                    };
+                    if done {
+                        if let Some(mut connection) = connections.remove(&token) {
+                            poll.registry().deregister(&mut connection)?;
+                        }
                     }
                 }
             }
