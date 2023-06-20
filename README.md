@@ -4,6 +4,6 @@ Server recieve cars' positon and calculates the routes and then sends back to th
 
 Output of server is (S means start; E means end/target location):
 
-![Alt text](image.png)
+![Server Output](image.png)
 
 This is server code for route calculating example. Client is on this repo https://github.com/codesole/car_client
